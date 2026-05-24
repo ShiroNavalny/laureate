@@ -29,7 +29,27 @@ except ImportError:
     )
     FONT_BD = "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf"
 
-INPUT_FILE = "diplomas/Сертификат Минор 2025.pdf"
+
+def _resolve_template(*candidates):
+    """Берём чистый шаблон из diplomas/ или из sibling-проекта laureate/."""
+    _dir = os.path.dirname(os.path.abspath(__file__))
+    search_roots = [
+        _dir,
+        os.path.join(_dir, ".."),
+        os.path.join(_dir, "..", "laureate"),
+        os.getcwd(),
+    ]
+    for root in search_roots:
+        for name in candidates:
+            p = os.path.normpath(os.path.join(root, name))
+            if os.path.exists(p):
+                return p
+    return candidates[0]
+
+
+INPUT_FILE = _resolve_template(
+    "diplomas/Сертификат Минор 2025.pdf",
+)
 
 COLOR_DARK = (0.106, 0.106, 0.102)
 COLOR_GREY = (0.427, 0.431, 0.439)
@@ -336,10 +356,6 @@ def fill_diploma_minor(data, output_path, qr_text=None):
 
 
 if __name__ == "__main__":
-    import shutil
-    os.makedirs("diplomas", exist_ok=True)
-    shutil.copy("/mnt/user-data/uploads/минор.pdf",
-                "diplomas/Сертификат Минор 2025.pdf")
     sample = {
         "bd_number": "00019006925",
         "program_kaz": "\"6B01501 - Математика\", B009-Математика мұғалімдерін даярлау",
