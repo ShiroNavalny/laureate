@@ -74,7 +74,19 @@ FONT_CAPTION = _resolve_font("PTSerifCaption-Regular.ttf",
                               "/usr/share/fonts/truetype/paratype/PTZ55F.ttf")
 FONT_BOLD    = _resolve_font("PTSerif-Bold.ttf",
                               "/usr/share/fonts/truetype/paratype/PTF75F.ttf")
-FONT_BD      = "/usr/share/fonts/truetype/dejavu/DejaVuSans-ExtraLight.ttf"
+def _first_existing(paths, fallback):
+    for p in paths:
+        if p and os.path.exists(p):
+            return p
+    return fallback
+
+
+FONT_BD = _first_existing([
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-ExtraLight.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+], FONT_BOLD)
 
 # ── Цвета ───────────────────────────────────────────────────────────────────
 COLOR_DARK = (0.106, 0.106, 0.102)   # rgb(27,27,26) — основной текст
@@ -665,6 +677,14 @@ def fill_diploma(data: dict, output_path: str, diploma_type: str = "bakalavr",
 
     dt = DIPLOMA_TYPES[diploma_type]
     input_file = dt["input_file"]
+    if not os.path.exists(input_file):
+        # Пробуем resolve относительно директории скрипта и соседнего laureate/
+        _dir = os.path.dirname(os.path.abspath(__file__))
+        for base in (_dir, os.path.join(_dir, "..", "laureate")):
+            candidate = os.path.join(base, input_file)
+            if os.path.exists(candidate):
+                input_file = os.path.abspath(candidate)
+                break
     if not os.path.exists(input_file):
         raise FileNotFoundError(f"Файл шаблона не найден: {input_file}")
     for p in (FONT_CAPTION, FONT_BOLD, FONT_BD):

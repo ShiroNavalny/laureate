@@ -24,7 +24,19 @@ try:
 except ImportError:
     _QR_AVAILABLE = False
 
-INPUT_FILE = "diplomas/ДИПЛОМ_докторанта_2025.pdf"
+_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _resolve_template(name: str) -> str:
+    """Ищем шаблон в diplomas/ рядом со скриптом, затем в ../laureate/diplomas/."""
+    for base in (_DIR, os.path.join(_DIR, "..", "laureate")):
+        p = os.path.join(base, "diplomas", name)
+        if os.path.exists(p):
+            return os.path.abspath(p)
+    return os.path.join("diplomas", name)
+
+
+INPUT_FILE = _resolve_template("ДИПЛОМ_докторанта_2025.pdf")
 
 # Шрифты (те же, что для бакалавра)
 # ── Шрифты: приоритет 1 — папка fonts/, 2 — системные paratype ──────────
@@ -37,7 +49,20 @@ FONT_CAPTION = _resolve_font("PTSerifCaption-Regular.ttf",
                               "/usr/share/fonts/truetype/paratype/PTZ55F.ttf")
 FONT_BOLD    = _resolve_font("PTSerif-Bold.ttf",
                               "/usr/share/fonts/truetype/paratype/PTF75F.ttf")
-FONT_BD      = "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf"
+
+
+def _find_first(paths, fallback):
+    for p in paths:
+        if p and os.path.exists(p):
+            return p
+    return fallback
+
+
+FONT_BD = _find_first([
+    "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+], FONT_BOLD)
 
 COLOR_DARK = (0.106, 0.106, 0.102)
 COLOR_GREY = (0.427, 0.431, 0.439)
@@ -162,32 +187,53 @@ def _font_buf(path):
 
 
 # ── Layout: разбивка длинного текста на 2 строки ────────────────────────────
-def _try_wrap_2(text, font, size, max_width):
-    """Разбивка по запятой (предпочтительно) или пробелу на 2 строки."""
-    def fits(s): return font.text_length(s, fontsize=size) <= max_width
-    candidates = []
-    if "," in text:
-        parts = text.split(",")
-        for i in range(1, len(parts)):
-            left  = ",".join(parts[:i]).rstrip() + ","
-            right = ",".join(parts[i:]).lstrip()
-            if left and right and fits(left) and fits(right):
-                score = max(font.text_length(left, fontsize=size),
-                            font.text_length(right, fontsize=size))
-                candidates.append((score, left, right))
-    words = text.split(" ")
-    if len(words) > 1:
-        for i in range(1, len(words)):
-            left  = " ".join(words[:i])
-            right = " ".join(words[i:])
-            if fits(left) and fits(right):
-                score = max(font.text_length(left, fontsize=size),
-                            font.text_length(right, fontsize=size))
-                candidates.append((score, left, right))
-    if not candidates:
-        return None
-    candidates.sort(key=lambda c: c[0])
-    return [candidates[0][1], candidates[0][2]]
+def _try_wrap_2(text, font, size, max_width, min_size=6.0):
+    """Разбивка по запятой (предпочтительно) или пробелу на 2 строки.
+    Перебирает размеры шрифта от `size` до `min_size`, чтобы для длинных
+    подписей (напр. полное название университета) подобрать максимальный
+    шрифт, при котором обе строки влезают в колонку.
+    """
+    def fits_at(s, sz): return font.text_length(s, fontsize=sz) <= max_width
+    sizes = []
+    s = size
+    while s >= min_size - 1e-6:
+        sizes.append(round(s, 2))
+        s -= 0.5
+    for sz in sizes:
+        candidates = []
+        # Приоритет: разбивка по `;` (для программ и пр. перечислений),
+        # затем по `,`, затем по пробелам.
+        if ";" in text:
+            parts = text.split(";")
+            for i in range(1, len(parts)):
+                left  = ";".join(parts[:i]).rstrip() + ";"
+                right = ";".join(parts[i:]).lstrip()
+                if left and right and fits_at(left, sz) and fits_at(right, sz):
+                    score = max(font.text_length(left, fontsize=sz),
+                                font.text_length(right, fontsize=sz))
+                    candidates.append((score, left, right))
+        if "," in text:
+            parts = text.split(",")
+            for i in range(1, len(parts)):
+                left  = ",".join(parts[:i]).rstrip() + ","
+                right = ",".join(parts[i:]).lstrip()
+                if left and right and fits_at(left, sz) and fits_at(right, sz):
+                    score = max(font.text_length(left, fontsize=sz),
+                                font.text_length(right, fontsize=sz))
+                    candidates.append((score, left, right))
+        words = text.split(" ")
+        if len(words) > 1:
+            for i in range(1, len(words)):
+                left  = " ".join(words[:i])
+                right = " ".join(words[i:])
+                if fits_at(left, sz) and fits_at(right, sz):
+                    score = max(font.text_length(left, fontsize=sz),
+                                font.text_length(right, fontsize=sz))
+                    candidates.append((score, left, right))
+        if candidates:
+            candidates.sort(key=lambda c: c[0])
+            return [candidates[0][1], candidates[0][2], sz]
+    return None
 
 
 def _try_wrap_3(text, font, size, max_width):
@@ -270,13 +316,19 @@ def _draw_text(page, text, *, line_x, line_y, size, font_path, color=COLOR_DARK,
                 size, l1, l2, l3 = result3
                 lines = [l1, l2, l3]
             else:
-                lines = _try_wrap_2(text, font, size, max_w)
-                if not lines:
+                result2 = _try_wrap_2(text, font, size, max_w, min_size)
+                if result2:
+                    l1, l2, size = result2
+                    lines = [l1, l2]
+                else:
                     size = _fit_size(text, font, size, max_w, min_size, label)
                     lines = [text]
         else:
-            lines = _try_wrap_2(text, font, size, max_w)
-            if not lines:
+            result2 = _try_wrap_2(text, font, size, max_w, min_size)
+            if result2:
+                l1, l2, size = result2
+                lines = [l1, l2]
+            else:
                 size = _fit_size(text, font, size, max_w, min_size, label)
                 lines = [text]
     else:

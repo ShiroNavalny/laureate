@@ -39,7 +39,20 @@ except ImportError:
     )
     FONT_BD = "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf"
 
-INPUT_FILE = "diplomas/Сертификат ФДО 2025.pdf"
+_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _resolve_template(name: str) -> str:
+    """Ищем шаблон в diplomas/ рядом со скриптом, затем в ../laureate/diplomas/."""
+    for base in (_DIR, os.path.join(_DIR, "..", "laureate")):
+        p = os.path.join(base, "diplomas", name)
+        if os.path.exists(p):
+            return os.path.abspath(p)
+    # Fallback — относительный путь (как раньше)
+    return os.path.join("diplomas", name)
+
+
+INPUT_FILE = _resolve_template("Сертификат ФДО 2025.pdf")
 
 COLOR_DARK = (0.106, 0.106, 0.102)
 COLOR_GREY = (0.427, 0.431, 0.439)
@@ -117,11 +130,13 @@ def _draw_text(page, text, *, line_x, line_y, size, font_path,
     else:
         x = x0
 
-    # ── Erase через redaction (чисто, без цветных прямоугольников) ───────────
+    # ── Erase через redaction по всей ширине зоны ────────────────────────────
+    # Затираем ВЕСЬ интервал (x0..x1) над линией, чтобы в шаблоне не осталось
+    # остатков плейсхолдеров вроде «Да … вна» по краям новой надписи.
     erase_top = baseline - size * 0.95
     erase_bot = baseline + size * 0.20
-    erase_l = max(x0 + PAD, x - 0.5)
-    erase_r = min(x1 - PAD, x + text_w + 0.5)
+    erase_l = x0 + PAD
+    erase_r = x1 - PAD
     if erase_r > erase_l:
         page.add_redact_annot(
             fitz.Rect(erase_l, erase_top, erase_r, erase_bot),
@@ -186,7 +201,7 @@ def fill_diploma_fdo(data, output_path, qr_text=None):
     if data.get("fio_kaz"):
         _draw_text(page, data["fio_kaz"],
                    line_x=(143.8, 464.9), line_y=LINE_KAZ_FIO,
-                   size=10.0, font_path=FONT_CAPTION, label="fio_kaz")
+                   size=12.0, font_path=FONT_BOLD, label="fio_kaz")
     if data.get("from_day_kaz"):
         _draw_text(page, data["from_day_kaz"],
                    line_x=(473.9, 491.6), line_y=LINE_KAZ_FIO,
@@ -218,7 +233,7 @@ def fill_diploma_fdo(data, output_path, qr_text=None):
     if data.get("program_kaz"):
         _draw_text(page, data["program_kaz"],
                    line_x=(143.8, 588.0), line_y=LINE_KAZ_PROGRAM,
-                   size=9.5, font_path=FONT_CAPTION, label="program_kaz")
+                   size=10.5, font_path=FONT_CAPTION, label="program_kaz")
     if data.get("credits_kaz"):
         _draw_text(page, data["credits_kaz"],
                    line_x=(419.6, 459.7), line_y=LINE_KAZ_CREDITS,
@@ -248,7 +263,7 @@ def fill_diploma_fdo(data, output_path, qr_text=None):
     if data.get("fio_rus"):
         _draw_text(page, data["fio_rus"],
                    line_x=(143.8, 520.2), line_y=LINE_RUS_FIO,
-                   size=10.0, font_path=FONT_CAPTION, label="fio_rus")
+                   size=12.0, font_path=FONT_BOLD, label="fio_rus")
     if data.get("from_day_rus"):
         _draw_text(page, data["from_day_rus"],
                    line_x=(531.6, 549.2), line_y=LINE_RUS_FIO,
@@ -280,7 +295,7 @@ def fill_diploma_fdo(data, output_path, qr_text=None):
     if data.get("program_rus"):
         _draw_text(page, data["program_rus"],
                    line_x=(143.8, 656.5), line_y=LINE_RUS_PROGRAM,
-                   size=9.5, font_path=FONT_CAPTION, label="program_rus")
+                   size=10.5, font_path=FONT_CAPTION, label="program_rus")
     if data.get("credits_rus"):
         _draw_text(page, data["credits_rus"],
                    line_x=(695.2, 724.9), line_y=LINE_RUS_PROGRAM,
@@ -305,7 +320,7 @@ def fill_diploma_fdo(data, output_path, qr_text=None):
     if data.get("fio_eng"):
         _draw_text(page, data["fio_eng"],
                    line_x=(143.8, 515.7), line_y=LINE_ENG_FIO,
-                   size=10.0, font_path=FONT_CAPTION, label="fio_eng")
+                   size=12.0, font_path=FONT_BOLD, label="fio_eng")
     if data.get("from_day_eng"):
         _draw_text(page, data["from_day_eng"],
                    line_x=(542.8, 560.4), line_y=LINE_ENG_FIO,
@@ -337,7 +352,7 @@ def fill_diploma_fdo(data, output_path, qr_text=None):
     if data.get("program_eng"):
         _draw_text(page, data["program_eng"],
                    line_x=(143.8, 638.5), line_y=LINE_ENG_PROGRAM,
-                   size=9.5, font_path=FONT_CAPTION, label="program_eng")
+                   size=10.5, font_path=FONT_CAPTION, label="program_eng")
     if data.get("credits_eng"):
         _draw_text(page, data["credits_eng"],
                    line_x=(705.1, 734.8), line_y=LINE_ENG_PROGRAM,
@@ -412,11 +427,5 @@ if __name__ == "__main__":
         "credits_eng": "40",
         "issue_year": "2024", "issue_day": "05", "issue_month_kaz": "маусым",
     }
-    import os
-    os.makedirs("diplomas", exist_ok=True)
-    # Копируем шаблон для теста
-    import shutil
-    shutil.copy("/mnt/user-data/uploads/Сертификат_ФДО_с_данными_.pdf",
-                "diplomas/Сертификат ФДО 2025.pdf")
     fill_diploma_fdo(sample, "/tmp/test_fdo_fixed.pdf")
     print("Test done → /tmp/test_fdo_fixed.pdf")

@@ -29,7 +29,19 @@ except ImportError:
     )
     FONT_BD = "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf"
 
-INPUT_FILE = "diplomas/Сертификат Минор 2025.pdf"
+_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _resolve_template(name: str) -> str:
+    """Ищем шаблон в diplomas/ рядом со скриптом, затем в ../laureate/diplomas/."""
+    for base in (_DIR, os.path.join(_DIR, "..", "laureate")):
+        p = os.path.join(base, "diplomas", name)
+        if os.path.exists(p):
+            return os.path.abspath(p)
+    return os.path.join("diplomas", name)
+
+
+INPUT_FILE = _resolve_template("Сертификат Минор 2025.pdf")
 
 COLOR_DARK = (0.106, 0.106, 0.102)
 COLOR_GREY = (0.427, 0.431, 0.439)
@@ -103,10 +115,14 @@ def _draw_text(page, text, *, line_x, line_y, size, font_path,
     else:
         x = x0
 
+    # Erase: тянем стирание чуть шире текста, но без выхода за пределы зоны,
+    # чтобы не задеть статические лейблы шаблона («20» и т. п.) на соседних
+    # позициях.
     erase_top = baseline - size * 0.95
     erase_bot = baseline + size * 0.20
-    erase_l = max(x0 + PAD, x - 0.5)
-    erase_r = min(x1 - PAD, x + text_w + 0.5)
+    margin = 1.5
+    erase_l = max(x0 + PAD, x - margin)
+    erase_r = min(x1 - PAD, x + text_w + margin)
     if erase_r > erase_l:
         page.add_redact_annot(
             fitz.Rect(erase_l, erase_top, erase_r, erase_bot),
@@ -136,8 +152,7 @@ def _draw_bd_number(page, number, *, line_x, line_y, label="bd_number"):
     erase_top = baseline - size * 0.95
     erase_bot = baseline + size * 0.20
     page.add_redact_annot(
-        fitz.Rect(max(x0 + PAD, x - 0.5), erase_top,
-                  min(x1 - PAD, x + text_w + 0.5), erase_bot),
+        fitz.Rect(x0 + PAD, erase_top, x1 - PAD, erase_bot),
         fill=None
     )
     page.apply_redactions(graphics=0)
@@ -336,10 +351,6 @@ def fill_diploma_minor(data, output_path, qr_text=None):
 
 
 if __name__ == "__main__":
-    import shutil
-    os.makedirs("diplomas", exist_ok=True)
-    shutil.copy("/mnt/user-data/uploads/минор.pdf",
-                "diplomas/Сертификат Минор 2025.pdf")
     sample = {
         "bd_number": "00019006925",
         "program_kaz": "\"6B01501 - Математика\", B009-Математика мұғалімдерін даярлау",

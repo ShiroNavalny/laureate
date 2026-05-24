@@ -35,6 +35,8 @@ FONT_BOLD = _find([
 FONT_BD = _find([
     "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    FONT_BOLD,   # последний фолбэк — заголовочный PTSerif-Bold
 ])
 
 if not FONT_CAPTION:
