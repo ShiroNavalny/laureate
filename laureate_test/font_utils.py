@@ -14,11 +14,13 @@ import os
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
 def _find(candidates):
     for p in candidates:
         if p and os.path.exists(p):
             return p
     return None
+
 
 FONT_CAPTION = _find([
     os.path.join(_SCRIPT_DIR, "fonts", "PTSerifCaption-Regular.ttf"),
@@ -32,9 +34,13 @@ FONT_BOLD = _find([
     "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf",
 ])
 
+# Carlito — open-source аналог Calibri (метрика совпадает до десятых).
+# Если системного нет — берём локальный из fonts/, либо Liberation/DejaVu как страховку.
 FONT_BD = _find([
     "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf",
+    os.path.join(_SCRIPT_DIR, "fonts", "Carlito-Regular.ttf"),
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ])
 
 if not FONT_CAPTION:
@@ -48,5 +54,7 @@ if not FONT_BOLD:
     )
 if not FONT_BD:
     raise FileNotFoundError(
-        "Шрифт Carlito не найден. Установите: sudo apt install fonts-crosextra-carlito"
+        "Шрифт Carlito (или аналог) не найден.\n"
+        "Установите: sudo apt install fonts-crosextra-carlito\n"
+        "Или положите fonts/Carlito-Regular.ttf рядом со скриптами."
     )

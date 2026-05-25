@@ -24,20 +24,49 @@ try:
 except ImportError:
     _QR_AVAILABLE = False
 
-INPUT_FILE = "diplomas/ДИПЛОМ_докторанта_2025.pdf"
-
 # Шрифты (те же, что для бакалавра)
 # ── Шрифты: приоритет 1 — папка fonts/, 2 — системные paratype ──────────
-def _resolve_font(local_name, system_path):
+def _resolve_font(local_name, *system_paths):
     _dir = os.path.dirname(os.path.abspath(__file__))
-    local = os.path.join(_dir, "fonts", local_name)
-    return local if os.path.exists(local) else system_path
+    candidates = [os.path.join(_dir, "fonts", local_name), *system_paths]
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    return candidates[-1]
 
 FONT_CAPTION = _resolve_font("PTSerifCaption-Regular.ttf",
                               "/usr/share/fonts/truetype/paratype/PTZ55F.ttf")
 FONT_BOLD    = _resolve_font("PTSerif-Bold.ttf",
                               "/usr/share/fonts/truetype/paratype/PTF75F.ttf")
-FONT_BD      = "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf"
+# Carlito = свободный аналог Calibri Light по метрикам.
+FONT_BD      = _resolve_font(
+    "Carlito-Regular.ttf",
+    "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+)
+
+
+def _resolve_template(*candidates):
+    """Чистый PhD-шаблон ищем в diplomas/, родительских каталогах и laureate/."""
+    _dir = os.path.dirname(os.path.abspath(__file__))
+    search_roots = [
+        _dir,
+        os.path.join(_dir, ".."),
+        os.path.join(_dir, "..", "laureate"),
+        os.getcwd(),
+    ]
+    for root in search_roots:
+        for name in candidates:
+            p = os.path.normpath(os.path.join(root, name))
+            if os.path.exists(p):
+                return p
+    return candidates[0]
+
+
+INPUT_FILE = _resolve_template(
+    "diplomas/ДИПЛОМ_докторанта_2025.pdf",
+)
 
 COLOR_DARK = (0.106, 0.106, 0.102)
 COLOR_GREY = (0.427, 0.431, 0.439)

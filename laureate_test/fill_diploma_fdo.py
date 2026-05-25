@@ -39,7 +39,33 @@ except ImportError:
     )
     FONT_BD = "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf"
 
-INPUT_FILE = "diplomas/Сертификат ФДО 2025.pdf"
+
+def _resolve_template(*candidates):
+    """Ищем чистый шаблон в нескольких типовых местах.
+
+    Тест по умолчанию запускается из laureate_test/, но рабочие чистые шаблоны
+    лежат в laureate/diplomas/. Если кто-то положил шаблон рядом в diplomas/ —
+    берём оттуда; иначе спускаемся к sibling-проекту laureate.
+    """
+    _dir = os.path.dirname(os.path.abspath(__file__))
+    search_roots = [
+        _dir,
+        os.path.join(_dir, ".."),
+        os.path.join(_dir, "..", "laureate"),
+        os.getcwd(),
+    ]
+    for root in search_roots:
+        for name in candidates:
+            p = os.path.normpath(os.path.join(root, name))
+            if os.path.exists(p):
+                return p
+    # Возвращаем первый кандидат — fill_diploma_fdo() сам выкинет FileNotFoundError
+    return candidates[0]
+
+
+INPUT_FILE = _resolve_template(
+    "diplomas/Сертификат ФДО 2025.pdf",
+)
 
 COLOR_DARK = (0.106, 0.106, 0.102)
 COLOR_GREY = (0.427, 0.431, 0.439)
@@ -412,11 +438,5 @@ if __name__ == "__main__":
         "credits_eng": "40",
         "issue_year": "2024", "issue_day": "05", "issue_month_kaz": "маусым",
     }
-    import os
-    os.makedirs("diplomas", exist_ok=True)
-    # Копируем шаблон для теста
-    import shutil
-    shutil.copy("/mnt/user-data/uploads/Сертификат_ФДО_с_данными_.pdf",
-                "diplomas/Сертификат ФДО 2025.pdf")
     fill_diploma_fdo(sample, "/tmp/test_fdo_fixed.pdf")
     print("Test done → /tmp/test_fdo_fixed.pdf")
