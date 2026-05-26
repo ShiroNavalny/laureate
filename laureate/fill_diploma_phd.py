@@ -24,16 +24,49 @@ try:
 except ImportError:
     _QR_AVAILABLE = False
 
-INPUT_FILE = "diplomas/ДИПЛОМ_докторанта_2025.pdf"
-
 # Шрифты (те же, что для бакалавра)
-FONT_CAPTION = "fonts/PTSerifCaption-Regular.ttf"
-FONT_BOLD    = "fonts/PTSerif-Bold.ttf"
-# В оригинальном PhD-шаблоне номер набран Calibri Light. У Carlito (свободный
-# аналог Calibri от Google) идентичные метрики — для текста «№ 00000000000»
-# даёт 111.4pt против 111.58pt в Calibri Light. С DejaVu было бы 138pt =
-# текст вылез бы за линию. Поэтому здесь Carlito.
-FONT_BD      = "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf"
+# ── Шрифты: приоритет 1 — папка fonts/, 2 — системные paratype ──────────
+def _resolve_font(local_name, *system_paths):
+    _dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [os.path.join(_dir, "fonts", local_name), *system_paths]
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    return candidates[-1]
+
+FONT_CAPTION = _resolve_font("PTSerifCaption-Regular.ttf",
+                              "/usr/share/fonts/truetype/paratype/PTZ55F.ttf")
+FONT_BOLD    = _resolve_font("PTSerif-Bold.ttf",
+                              "/usr/share/fonts/truetype/paratype/PTF75F.ttf")
+# Carlito = свободный аналог Calibri Light по метрикам.
+FONT_BD      = _resolve_font(
+    "Carlito-Regular.ttf",
+    "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+)
+
+
+def _resolve_template(*candidates):
+    """Чистый PhD-шаблон ищем в diplomas/, родительских каталогах и laureate/."""
+    _dir = os.path.dirname(os.path.abspath(__file__))
+    search_roots = [
+        _dir,
+        os.path.join(_dir, ".."),
+        os.path.join(_dir, "..", "laureate"),
+        os.getcwd(),
+    ]
+    for root in search_roots:
+        for name in candidates:
+            p = os.path.normpath(os.path.join(root, name))
+            if os.path.exists(p):
+                return p
+    return candidates[0]
+
+
+INPUT_FILE = _resolve_template(
+    "diplomas/ДИПЛОМ_докторанта_2025.pdf",
+)
 
 COLOR_DARK = (0.106, 0.106, 0.102)
 COLOR_GREY = (0.427, 0.431, 0.439)
@@ -102,11 +135,14 @@ LINE_ENG_FIRSTNAME  = 329.32
 
 # Эти 9 линий ОДИНАКОВЫ во всех 3 колонках (y совпадает):
 LINE_DISSERT_1   = 346.64    # тема диссертации, строка 1
-LINE_DISSERT_2   = 363.65    #                    строка 2
+LINE_DISSERT_MID = 355.14    #                    строка 2 (середина)
+LINE_DISSERT_2   = 363.65    #                    строка 3
 LINE_CONSULT_1   = 380.65    # научные консультанты, строка 1
-LINE_CONSULT_2   = 397.66    #                       строка 2
+LINE_CONSULT_MID = 389.15    #                       строка 2 (середина)
+LINE_CONSULT_2   = 397.66    #                       строка 3
 LINE_REVIEW_1    = 414.67    # официальные рецензенты, строка 1
-LINE_REVIEW_2    = 431.68    #                         строка 2
+LINE_REVIEW_MID  = 423.17    #                         строка 2 (середина)
+LINE_REVIEW_2    = 431.68    #                         строка 3
 LINE_PLACE_1     = 448.69    # место защиты, строка 1
 LINE_PLACE_2     = 465.69    #                строка 2
 LINE_DATE_DEF    = 482.70    # дата защиты
@@ -183,6 +219,38 @@ def _try_wrap_2(text, font, size, max_width):
     return [candidates[0][1], candidates[0][2]]
 
 
+def _try_wrap_3(text, font, size, max_width):
+    """
+    Оптимальное разбиение текста на 3 строки.
+    Возвращает [l1, l2, l3] или None.
+    Пробует уменьшать размер шрифта от size до 6pt.
+    """
+    words = text.split()
+    if len(words) < 3:
+        return None
+    for sz in [size, size - 0.5, size - 1.0, size - 1.5, size - 2.0]:
+        if sz < 6.0:
+            sz = 6.0
+        best = None
+        for i in range(1, len(words) - 1):
+            for j in range(i + 1, len(words)):
+                l1 = " ".join(words[:i])
+                l2 = " ".join(words[i:j])
+                l3 = " ".join(words[j:])
+                if (font.text_length(l1, fontsize=sz) <= max_width and
+                        font.text_length(l2, fontsize=sz) <= max_width and
+                        font.text_length(l3, fontsize=sz) <= max_width):
+                    score = max(font.text_length(l, fontsize=sz) for l in [l1, l2, l3])
+                    if best is None or score < best[0]:
+                        best = (score, sz, l1, l2, l3)
+        if best:
+            return best[1:]   # (size, l1, l2, l3)
+        if sz <= 6.0:
+            break
+    return None
+
+
+
 def _fit_size(text, font, base_size, max_width, min_size, label=""):
     """Адаптивно уменьшает размер чтобы текст влез в одну строку."""
     if font.text_length(text, fontsize=base_size) <= max_width:
@@ -197,7 +265,7 @@ def _fit_size(text, font, base_size, max_width, min_size, label=""):
 
 # ── Отрисовка одного текстового поля ────────────────────────────────────────
 def _draw_text(page, text, *, line_x, line_y, size, font_path, color=COLOR_DARK,
-               wrap=False, line2_y=None, min_size=None, label="",
+               wrap=False, line2_y=None, line3_y=None, min_size=None, label="",
                on_underline=False):
     """
     Универсальная функция отрисовки текста на линии подчёркивания.
@@ -224,10 +292,22 @@ def _draw_text(page, text, *, line_x, line_y, size, font_path, color=COLOR_DARK,
 
     # Определяем layout
     if wrap and font.text_length(text, fontsize=size) > max_w:
-        lines = _try_wrap_2(text, font, size, max_w)
-        if not lines:
-            size = _fit_size(text, font, size, max_w, min_size, label)
-            lines = [text]
+        # Сначала пробуем 3 строки (если разрешено line3_y)
+        if line3_y is not None:
+            result3 = _try_wrap_3(text, font, size, max_w)
+            if result3:
+                size, l1, l2, l3 = result3
+                lines = [l1, l2, l3]
+            else:
+                lines = _try_wrap_2(text, font, size, max_w)
+                if not lines:
+                    size = _fit_size(text, font, size, max_w, min_size, label)
+                    lines = [text]
+        else:
+            lines = _try_wrap_2(text, font, size, max_w)
+            if not lines:
+                size = _fit_size(text, font, size, max_w, min_size, label)
+                lines = [text]
     else:
         if font.text_length(text, fontsize=size) > max_w:
             size = _fit_size(text, font, size, max_w, min_size, label)
@@ -238,14 +318,12 @@ def _draw_text(page, text, *, line_x, line_y, size, font_path, color=COLOR_DARK,
 
     # Рисуем
     tw = fitz.TextWriter(page.rect)
+    y_positions = [line_y, line2_y, line3_y]
     for i, ln in enumerate(lines):
-        if i == 0:
-            y = _baseline_for(line_y)
+        if i < len(y_positions) and y_positions[i] is not None:
+            y = _baseline_for(y_positions[i])
         else:
-            if line2_y is not None:
-                y = _baseline_for(line2_y)
-            else:
-                y = _baseline_for(line_y) - size * 1.1
+            y = _baseline_for(line_y) + size * 1.1 * i
 
         # erase: top — захватывает всю высоту букв (с диакритикой казахских),
         # bot — НЕ ниже baseline. Это гарантирует что лейблы-подсказки
@@ -300,66 +378,93 @@ def _split_persons(text):
     return parts
 
 
-def _draw_multi_persons(page, text, *, line_x, line_y, line2_y,
+def _best_split(persons, font, size, max_w):
+    """
+    Оптимальное разбиение списка лиц (3-4) на 2 строки.
+    Перебирает все точки разрыва, выбирает максимальный размер шрифта,
+    при котором обе строки влезают, и балансирует их длину.
+    """
+    best = None   # (font_size, balance_score, row1, row2)
+    for split in range(1, len(persons)):
+        row1 = "; ".join(persons[:split])
+        row2 = "; ".join(persons[split:])
+        # Подбираем наибольший размер при котором обе строки влезают
+        for s in (size - i * 0.5 for i in range(10)):
+            s = max(s, 5.5)
+            if (font.text_length(row1, fontsize=s) <= max_w and
+                    font.text_length(row2, fontsize=s) <= max_w):
+                balance = max(font.text_length(row1, fontsize=s),
+                              font.text_length(row2, fontsize=s))
+                # Предпочитаем максимальный шрифт, при равенстве — лучший баланс
+                if best is None or s > best[0] or (s == best[0] and balance < best[1]):
+                    best = (s, balance, row1, row2)
+                break
+    if best is None:
+        # Аварийный вариант: все в одну строку с минимальным шрифтом
+        return "; ".join(persons[:2]), "; ".join(persons[2:]), 5.5
+    return best[2], best[3], best[0]
+
+
+def _draw_multi_persons(page, text, *, line_x, line_y, line2_y, line3_y=None,
                         size, font_path, color=COLOR_DARK, min_size=6.0,
                         label=""):
-    """Отрисовка списка лиц (консультанты, рецензенты) — до 4 в 2 строки.
+    """
+    Отрисовка списка лиц (консультанты / рецензенты) — до 4 человек в 2 строки.
 
-    Логика:
-      • 1 человек → 1 строка по центру.
-      • 2 человека → по одному в строку (line_y и line2_y).
-      • 3-4 человека → пара на line_y, пара на line2_y. Между членами
-        пары — разделитель «; ». Размер шрифта подбирается так, чтобы
-        самая длинная строка влезла в ширину линии.
-      • Если на одной из линий текст не влезает — шрифт уменьшается
-        вплоть до min_size; если всё равно не лезет, делается перенос.
+    Распределение:
+      1 чел. → 1 строка.
+      2 чел. → по одному на строку.
+      3-4 чел. → оптимальное разбиение: все варианты i+j перебираются,
+                  выбирается максимальный шрифт и лучший баланс строк.
     """
     persons = _split_persons(text)
     if not persons:
         return
 
-    # Распределяем по строкам
-    if len(persons) == 1:
-        rows = [persons[0]]
-    elif len(persons) == 2:
-        rows = [persons[0], persons[1]]
-    elif len(persons) == 3:
-        rows = ["; ".join(persons[:2]), persons[2]]
-    else:  # 4 и более — лишних склеиваем во вторую пару
-        rows = [
-            "; ".join(persons[:2]),
-            "; ".join(persons[2:4]) if len(persons) == 4 else "; ".join(persons[2:]),
-        ]
-
-    # Подбираем шрифт чтобы влезали обе строки
     buf = _font_buf(font_path)
     font = fitz.Font(fontbuffer=buf)
     x0, x1 = line_x
     max_w = x1 - x0
-    cur_size = size
-    for s in [size, size - 0.5, size - 1.0, size - 1.5, size - 2.0,
-              size - 2.5, size - 3.0]:
-        if s < min_size:
-            cur_size = min_size
-            break
-        if all(font.text_length(r, fontsize=s) <= max_w for r in rows):
-            cur_size = s
-            break
-    else:
-        cur_size = min_size
 
-    # Рисуем каждую строку
-    line_ys = [line_y, line2_y] if len(rows) == 2 else [line_y]
+    if len(persons) == 1:
+        rows = [persons[0]]
+        cur_size = _fit_size(persons[0], font, size, max_w, min_size, label)
+    elif len(persons) == 2:
+        rows = [persons[0], persons[1]]
+        cur_size = size
+        for s in [size - i * 0.5 for i in range(8)]:
+            s = max(s, min_size)
+            if all(font.text_length(r, fontsize=s) <= max_w for r in rows):
+                cur_size = s
+                break
+        else:
+            cur_size = min_size
+    elif len(persons) == 3 and line3_y is not None:
+        # Три человека — каждый на своей строке
+        rows = persons[:3]
+        cur_size = size
+        for s in [size - i * 0.5 for i in range(8)]:
+            s = max(s, min_size)
+            if all(font.text_length(r, fontsize=s) <= max_w for r in rows):
+                cur_size = s
+                break
+        else:
+            cur_size = min_size
+    else:
+        # 3+ без 3й линии или 4+ — оптимальное разбиение в 2 строки
+        r1, r2, cur_size = _best_split(persons, font, size, max_w)
+        rows = [r1, r2]
+
+    # Рисуем
+    all_ys = [line_y, line2_y, line3_y]
+    line_ys = [y for y in all_ys[:len(rows)] if y is not None]
     for ln, y_line in zip(rows, line_ys):
-        # Если даже на min_size не влезает — обрезаем по словам
-        text_w = font.text_length(ln, fontsize=cur_size)
         actual_size = cur_size
+        text_w = font.text_length(ln, fontsize=actual_size)
         if text_w > max_w:
-            # Финальный fit-to-width
-            actual_size = max(cur_size * (max_w / text_w) * 0.98, 5.5)
+            actual_size = max(actual_size * (max_w / text_w) * 0.98, 5.5)
 
         baseline = bl(y_line)
-        # erase
         text_top = baseline - actual_size * 0.95
         text_bot = baseline + 0.5
         w = font.text_length(ln, fontsize=actual_size)
@@ -599,8 +704,9 @@ def fill_diploma_phd(data: dict, output_path: str, qr_text: str = ""):
         if data.get(key):
             _draw_text(page, data[key],
                        line_x=col, line_y=LINE_DISSERT_1,
-                       line2_y=LINE_DISSERT_2,
-                       size=9.0, font_path=FONT_CAPTION,
+                       line2_y=LINE_DISSERT_MID,
+                       line3_y=LINE_DISSERT_2,
+                       size=8.0, font_path=FONT_CAPTION,
                        wrap=True, min_size=6.0, label=key)
 
     # ── 9. Научные консультанты (до 4 человек, 2 строки × 2 ФИО) ─────────────
@@ -609,9 +715,10 @@ def fill_diploma_phd(data: dict, output_path: str, qr_text: str = ""):
         if data.get(key):
             _draw_multi_persons(page, data[key],
                        line_x=col, line_y=LINE_CONSULT_1,
-                       line2_y=LINE_CONSULT_2,
-                       size=9.0, font_path=FONT_CAPTION,
-                       min_size=6.0, label=key)
+                       line2_y=LINE_CONSULT_MID,
+                       line3_y=LINE_CONSULT_2,
+                       size=7.0, font_path=FONT_CAPTION,
+                       min_size=5.5, label=key)
 
     # ── 10. Официальные рецензенты (до 4 человек, 2 строки × 2 ФИО) ──────────
     for lang, col in [("kaz", COL_KAZ), ("eng", COL_ENG), ("rus", COL_RUS)]:
@@ -619,9 +726,10 @@ def fill_diploma_phd(data: dict, output_path: str, qr_text: str = ""):
         if data.get(key):
             _draw_multi_persons(page, data[key],
                        line_x=col, line_y=LINE_REVIEW_1,
-                       line2_y=LINE_REVIEW_2,
-                       size=9.0, font_path=FONT_CAPTION,
-                       min_size=6.0, label=key)
+                       line2_y=LINE_REVIEW_MID,
+                       line3_y=LINE_REVIEW_2,
+                       size=7.0, font_path=FONT_CAPTION,
+                       min_size=5.5, label=key)
 
     # ── 11. Место защиты (2 строки) ─────────────────────────────────────────
     for lang, col in [("kaz", COL_KAZ), ("eng", COL_ENG), ("rus", COL_RUS)]:
